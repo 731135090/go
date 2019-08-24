@@ -25,6 +25,7 @@ type Scan struct {
 	channel   chan uint
 	wait      sync.WaitGroup
 	lock      sync.Mutex
+	Success   int
 }
 
 var scan = new(Scan)
@@ -58,7 +59,7 @@ func main() {
 }
 
 func logInfo() {
-	log := fmt.Sprintf("start port：%d, end port：%d, curr port：%d", scan.StartPort, scan.EndPort, scan.CurrPort)
+	log := fmt.Sprintf("start port：%d, end port：%d, success count：%d", scan.StartPort, scan.EndPort, scan.Success)
 	fmt.Println(log)
 }
 
@@ -83,7 +84,6 @@ func (s *Scan) Consumer() {
 	}()
 
 	pNum := make(chan int, WORK_NUM)
-	pWait := sync.WaitGroup{}
 	for {
 		port, ok := <-s.channel
 		if !ok {
@@ -91,17 +91,18 @@ func (s *Scan) Consumer() {
 		}
 		pNum <- 1
 		go func(p uint) {
-			pWait.Add(1)
 			rs, _ := scanRun(s.Host, strconv.Itoa(int(p)))
 			scan.CurrPort = p
 			if rs {
-				println("open port：" + strconv.Itoa(int(p)))
+				println("open port：" + strconv.Itoa(int(scan.CurrPort)))
 			}
+			scan.lock.Lock()
+			scan.Success += 1
+			scan.lock.Unlock()
 			<-pNum
-			pWait.Done()
 		}(port)
 	}
-	pWait.Wait()
+	close(pNum)
 }
 
 func (s *Scan) Produce() {
