@@ -14,7 +14,7 @@ const (
 	PORT_MIN = 1
 	PORT_MAX = 65535
 
-	WORK_NUM = 20
+	WORK_NUM = 200
 )
 
 type Scan struct {
@@ -32,7 +32,7 @@ var scan = new(Scan)
 func main() {
 	flag.UintVar(&scan.StartPort, "s_p", PORT_MIN, "start port")
 	flag.UintVar(&scan.EndPort, "e_p", PORT_MAX, "end port")
-	flag.StringVar(&scan.Host, "h", "49.234.187.114", "host")
+	flag.StringVar(&scan.Host, "h", "192.168.56.101", "host")
 	flag.Parse()
 
 	scan.init()
@@ -69,7 +69,7 @@ func (s *Scan) init() {
 }
 
 func scanRun(address string, port string) (bool, error) {
-	conn, err := net.DialTimeout("tcp", address+":"+port, 1*time.Second)
+	conn, err := net.DialTimeout("tcp", address+":"+port, 10*time.Second)
 	if err != nil {
 		return false, err
 	}
@@ -92,13 +92,13 @@ func (s *Scan) Consumer() {
 		pNum <- 1
 		go func(p uint) {
 			pWait.Add(1)
-			pWait.Done()
 			rs, _ := scanRun(s.Host, strconv.Itoa(int(p)))
 			scan.CurrPort = p
 			if rs {
 				println("open port：" + strconv.Itoa(int(p)))
 			}
 			<-pNum
+			pWait.Done()
 		}(port)
 	}
 	pWait.Wait()
