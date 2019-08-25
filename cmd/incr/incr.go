@@ -3,9 +3,9 @@ package main
 import "fmt"
 
 type Incr struct {
-	id  int
-	key string
-	ch  chan int
+	startId int
+	key     string
+	ch      chan int
 }
 
 func main() {
@@ -18,10 +18,10 @@ func main() {
 func GetIncr(key string, id int) *Incr {
 	incr := new(Incr)
 	incr.key = key
-	incr.id = id
+	incr.startId = id
 	incr.ch = make(chan int)
 	go func() {
-		for i := incr.id; ; i++ {
+		for i := incr.startId; true; i++ {
 			incr.ch <- i
 		}
 	}()
