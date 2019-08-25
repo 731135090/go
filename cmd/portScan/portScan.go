@@ -31,8 +31,8 @@ type Scan struct {
 var scan = new(Scan)
 
 func main() {
-	flag.UintVar(&scan.StartPort, "s_p", PORT_MIN, "start port")
-	flag.UintVar(&scan.EndPort, "e_p", PORT_MAX, "end port")
+	flag.UintVar(&scan.StartPort, "s", PORT_MIN, "start port")
+	flag.UintVar(&scan.EndPort, "e", PORT_MAX, "end port")
 	flag.StringVar(&scan.Host, "h", "192.168.56.101", "host")
 	flag.Parse()
 
