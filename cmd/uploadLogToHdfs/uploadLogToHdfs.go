@@ -35,10 +35,6 @@ var work = new(Work)
 
 func main() {
 	Init()
-	infoLog(fmt.Sprintf("start  date :%s ;hour:%s", work.Date, work.Hour))
-
-	rsync()
-
 	if len(projectList) > 0 {
 		work.wait.Add(1)
 		go work.CombineHourFile()
@@ -47,20 +43,24 @@ func main() {
 		go work.ZipCombineFile()
 		work.wait.Wait()
 	}
-	infoLog(fmt.Sprintf("end  date :%s ;hour:%s", work.Date, work.Hour))
+	infoLog(fmt.Sprintf("###### end job date :%s ;hour:%s", work.Date, work.Hour))
 }
 func Init() {
 	flag.StringVar(&work.Date, "d", GetRunDate("2006-01-02"), "日期 默认为运行时间前一小时的日期")
 	flag.StringVar(&work.Hour, "h", GetRunDate("15"), "小时 默认为运行时的前一小时")
 	flag.Parse()
 
+	infoLog(fmt.Sprintf("###### start job date :%s ;hour:%s", work.Date, work.Hour))
+
 	work.Year = strconv.Itoa(GetYearByDate(work.Date))
 	work.SrcBaseDir = fmt.Sprintf("/opt/data/appNewLogs/%s/%s/", work.Year, work.Date)
 	work.CombineChan = make(chan string, 100)
 	work.CombineWorkNum = 10
 	work.ZipWorkNum = 20
-	projectList = GetProjectList(work.SrcBaseDir)
 
+	rsync()
+
+	projectList = GetProjectList(work.SrcBaseDir)
 	projectCount := 0
 	for _, projectName := range projectList {
 		pattern := fmt.Sprintf("*,%s,%s,%s*.log", projectName, work.Date, work.Hour)
@@ -73,19 +73,18 @@ func Init() {
 }
 
 func rsync() {
+	dstDir := "/opt/data/appNewLogs/" + work.Year + "/" + work.Date
+	Mkdir(dstDir)
 	cmd := "/opt/app/rsync/bin/rsync " +
-		"-avzP --timeout=180 " +
+		"-avzP " +
+		"--timeout=180 " +
 		"--port=3334 " +
-		"--bwlimit=15360 " +
-		"--include=/ " +
-		"--include=/" + work.Year + "/ " +
-		"--include=/" + work.Year + "/" + work.Date + "/ " +
-		"--exclude=.* " +
-		"--exclude=/" + work.Year + "/* " +
-		"--exclude=/* " +
+		"--bwlimit=512000 " +
+		"--include='*/*" + work.Date + "," + work.Hour + "_*'  " +
+		"--exclude='*/*'  " +
 		"--password-file=/opt/case/output/qs139166/pass/rsync.pas " +
-		"hadoop@172.20.0.42::appnewlog/appNewLogs/ " +
-		"/opt/data/appNewLogs/"
+		"hadoop@172.20.0.42::appnewlog/appNewLogs/" + work.Year + "/" + work.Date + "/ " +
+		dstDir
 	Cmd(cmd)
 	infoLog("rsync end :" + cmd)
 }
@@ -149,10 +148,10 @@ func (work *Work) ZipCombineFile() {
 			err := Cmd(zipCmd)
 			if err == nil {
 				hadoopDir := fmt.Sprintf("%s/%s/%s/%s/", HdfsBaseDir, project, work.Date, work.Hour)
-				mkdirCmd := fmt.Sprintf("%s dfs -mkdir -p %s.txt.bz2 %s", HADOOP_BIN, fileName, hadoopDir)
+				mkdirCmd := fmt.Sprintf("source ~/.bashrc ; %s dfs -mkdir -p %s.txt.bz2 %s", HADOOP_BIN, fileName, hadoopDir)
 				Cmd(mkdirCmd)
-				uploadCmd := fmt.Sprintf("%s dfs -put -f %s.txt.bz2 %s", HADOOP_BIN, fileName, hadoopDir)
-				err := Cmd(uploadCmd)
+				uploadCmd := fmt.Sprintf("source ~/.bashrc ; %s dfs -put -f %s.txt.bz2 %s", HADOOP_BIN, fileName, hadoopDir)
+				err = Cmd(uploadCmd)
 				if err != nil {
 					errorLog("upload error:" + uploadCmd + " error:" + err.Error())
 				} else {
@@ -307,4 +306,18 @@ func FileSize(fileName string) int {
 		return int(info.Size())
 	}
 	return 0
+}
+
+func Mkdir(dir string) (e error) {
+	_, er := os.Stat(dir)
+	b := er == nil || os.IsExist(er)
+	if !b {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			if os.IsPermission(err) {
+				fmt.Println("create dir error:", err.Error())
+				e = err
+			}
+		}
+	}
+	return
 }
