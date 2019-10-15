@@ -16,6 +16,7 @@ import (
 const HADOOP_BIN = "/usr/bin/hadoop"
 
 var HdfsBaseDir = "/ods/mobile/appNewlogs"
+var IpList = []string{"172.20.0.91", "172.20.0.93", "172.20.0.106", "172.20.0.52"}
 
 var projectList []string
 
@@ -23,7 +24,9 @@ type Work struct {
 	Year           string
 	Date           string
 	Hour           string
+	IsUpload       string
 	SrcBaseDir     string
+	Project        string
 	CombineChan    chan string
 	wait           sync.WaitGroup
 	CombineWorkNum int
@@ -32,9 +35,15 @@ type Work struct {
 }
 
 var work = new(Work)
+var rWait = sync.WaitGroup{}
 
 func main() {
 	Init()
+	if work.IsUpload == "no" {
+		infoLog(fmt.Sprintf("# rsync job end date :%s ;hour:%s; minute:%d", work.Date, work.Hour, time.Now().Minute()))
+		return
+	}
+
 	if len(projectList) > 0 {
 		work.wait.Add(1)
 		go work.CombineHourFile()
@@ -48,6 +57,9 @@ func main() {
 func Init() {
 	flag.StringVar(&work.Date, "d", GetRunDate("2006-01-02"), "日期 默认为运行时间前一小时的日期")
 	flag.StringVar(&work.Hour, "h", GetRunDate("15"), "小时 默认为运行时的前一小时")
+	flag.StringVar(&work.Project, "p", "all", "默认全部项目")
+	flag.StringVar(&work.IsUpload, "u", GetUploadState(), "是否执行上传")
+
 	flag.Parse()
 
 	infoLog(fmt.Sprintf("###### start job date :%s ;hour:%s", work.Date, work.Hour))
@@ -56,9 +68,13 @@ func Init() {
 	work.SrcBaseDir = fmt.Sprintf("/opt/data/appNewLogs/%s/%s/", work.Year, work.Date)
 	work.CombineChan = make(chan string, 100)
 	work.CombineWorkNum = 10
-	work.ZipWorkNum = 20
+	work.ZipWorkNum = 10
 
-	rsync()
+	for _, ip := range IpList {
+		rWait.Add(1)
+		go rsync(ip)
+	}
+	rWait.Wait()
 
 	projectList = GetProjectList(work.SrcBaseDir)
 	projectCount := 0
@@ -72,7 +88,9 @@ func Init() {
 	work.ProjectNum = projectCount
 }
 
-func rsync() {
+func rsync(ip string) {
+	defer rWait.Done()
+
 	dstDir := "/opt/data/appNewLogs/" + work.Year + "/" + work.Date
 	Mkdir(dstDir)
 	cmd := "/opt/app/rsync/bin/rsync " +
@@ -80,11 +98,49 @@ func rsync() {
 		"--timeout=180 " +
 		"--port=3334 " +
 		"--bwlimit=512000 " +
-		"--include='*/*" + work.Date + "," + work.Hour + "_*'  " +
-		"--exclude='*/*'  " +
+		"--include='*/*" + work.Date + ",*' " +
+		"--exclude='*/*' " +
 		"--password-file=/opt/case/output/qs139166/pass/rsync.pas " +
-		"hadoop@172.20.0.42::appnewlog/appNewLogs/" + work.Year + "/" + work.Date + "/ " +
+		"hadoop@" + ip + "::appnewlog/logs/" + work.Year + "/" + work.Date + "/ " +
 		dstDir
+
+	if work.IsUpload == "yes" {
+		cmd = "/opt/app/rsync/bin/rsync " +
+			"-avzP " +
+			"--timeout=180 " +
+			"--port=3334 " +
+			"--bwlimit=512000 " +
+			"--include='*/*" + work.Date + "," + work.Hour + "_*'  " +
+			"--exclude='*/*' " +
+			"--password-file=/opt/case/output/qs139166/pass/rsync.pas " +
+			"hadoop@" + ip + "::appnewlog/logs/" + work.Year + "/" + work.Date + "/ " +
+			dstDir
+	}
+	if work.Project != "all" {
+		cmd = "/opt/app/rsync/bin/rsync " +
+			"-avzP " +
+			"--timeout=180 " +
+			"--port=3334 " +
+			"--bwlimit=512000 " +
+			"--include='*/*" + work.Date + ",*' " +
+			"--exclude='*/*' " +
+			"--password-file=/opt/case/output/qs139166/pass/rsync.pas " +
+			"hadoop@" + ip + "::appnewlog/logs/" + work.Year + "/" + work.Date + "/" + work.Project + " " +
+			dstDir
+
+		if work.IsUpload == "yes" {
+			cmd = "/opt/app/rsync/bin/rsync " +
+				"-avzP " +
+				"--timeout=180 " +
+				"--port=3334 " +
+				"--bwlimit=512000 " +
+				"--include='*/*" + work.Date + "," + work.Hour + "_*'  " +
+				"--exclude='*/*' " +
+				"--password-file=/opt/case/output/qs139166/pass/rsync.pas " +
+				"hadoop@" + ip + "::appnewlog/logs/" + work.Year + "/" + work.Date + "/" + work.Project + " " +
+				dstDir
+		}
+	}
 	Cmd(cmd)
 	infoLog("rsync end :" + cmd)
 }
@@ -140,11 +196,16 @@ func (work *Work) ZipCombineFile() {
 		pNum <- 1
 		go func(project string, rs chan<- bool) {
 			fileName := fmt.Sprintf("%s%s/%s_%s_%s", work.SrcBaseDir, project, project, work.Date, work.Hour)
-			zipCmd := fmt.Sprintf("bzip2 -f -9 %s.txt", fileName)
+			zipCmd := fmt.Sprintf("bzip2 -f %s.txt", fileName)
 			//大于1g的文件开启多线程压缩
-			if FileSize(fileName+".txt") > 1024*1024*1024 {
-				zipCmd = fmt.Sprintf("pbzip2 -p10f %s.txt", fileName)
+			fileSize := FileSize(fileName + ".txt")
+			if fileSize > 1024*1024*1024 {
+				zipCmd = fmt.Sprintf("pbzip2 -p5f %s.txt", fileName)
 			}
+			if fileSize > 3*1024*1024*1024 {
+				zipCmd = fmt.Sprintf("pbzip2 -p15f %s.txt", fileName)
+			}
+
 			err := Cmd(zipCmd)
 			if err == nil {
 				hadoopDir := fmt.Sprintf("%s/%s/%s/%s/", HdfsBaseDir, project, work.Date, work.Hour)
@@ -174,9 +235,27 @@ func (work *Work) ZipCombineFile() {
 
 func GetProjectList(baseDir string) []string {
 	dirList := GetAllFilesByDir(baseDir)
+	majorProject := map[string]bool{
+		"hbtt":       true,
+		"zhushou":    true,
+		"xqlm2":      true,
+		"browser":    true,
+		"mbsearch":   true,
+		"tianqiwang": true,
+		"gsq":        true,
+		"shoujilm":   true,
+		"loginsdk":   true,
+		"calendar":   true,
+		"xqtt":       true,
+	}
 	projectList := []string{}
 	for _, dir := range dirList {
-		projectList = append(projectList, strings.TrimLeft(Substr(dir, strings.LastIndex(dir, "/"), len(dir)), "/"))
+		project := strings.TrimLeft(Substr(dir, strings.LastIndex(dir, "/"), len(dir)), "/")
+		if _, ok := majorProject[project]; ok {
+			projectList = append([]string{project}, projectList...)
+		} else {
+			projectList = append(projectList, project)
+		}
 	}
 	return projectList
 }
@@ -320,4 +399,14 @@ func Mkdir(dir string) (e error) {
 		}
 	}
 	return
+}
+
+//每小时小于10分钟的那次执行上传，否则只同步数据
+func GetUploadState() string {
+	minute := time.Now().Minute()
+	if minute < 10 && minute > 0 {
+		return "yes"
+	} else {
+		return "no"
+	}
 }
