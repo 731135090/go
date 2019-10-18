@@ -36,6 +36,7 @@ type Work struct {
 
 var work = new(Work)
 var rWait = sync.WaitGroup{}
+var isMajor = "no"
 
 func main() {
 	Init()
@@ -59,6 +60,7 @@ func Init() {
 	flag.StringVar(&work.Hour, "h", GetRunDate("15"), "小时 默认为运行时的前一小时")
 	flag.StringVar(&work.Project, "p", "all", "默认全部项目")
 	flag.StringVar(&work.IsUpload, "u", GetUploadState(), "是否执行上传")
+	flag.StringVar(&isMajor, "m", "yes", "只执行主要任务")
 
 	flag.Parse()
 
@@ -68,7 +70,7 @@ func Init() {
 	work.SrcBaseDir = fmt.Sprintf("/opt/data/appNewLogs/%s/%s/", work.Year, work.Date)
 	work.CombineChan = make(chan string, 100)
 	work.CombineWorkNum = 10
-	work.ZipWorkNum = 10
+	work.ZipWorkNum = 12
 
 	for _, ip := range IpList {
 		rWait.Add(1)
@@ -196,14 +198,14 @@ func (work *Work) ZipCombineFile() {
 		pNum <- 1
 		go func(project string, rs chan<- bool) {
 			fileName := fmt.Sprintf("%s%s/%s_%s_%s", work.SrcBaseDir, project, project, work.Date, work.Hour)
-			zipCmd := fmt.Sprintf("bzip2 -f %s.txt", fileName)
-			//大于1g的文件开启多线程压缩
+			zipCmd := fmt.Sprintf("bzip2 -5 -f %s.txt", fileName)
+			//大于500M的文件开启多线程压缩
 			fileSize := FileSize(fileName + ".txt")
-			if fileSize > 1024*1024*1024 {
-				zipCmd = fmt.Sprintf("pbzip2 -p5f %s.txt", fileName)
+			if fileSize > 0.5*1024*1024*1024 {
+				zipCmd = fmt.Sprintf("pbzip2 -5 -p5f %s.txt", fileName)
 			}
 			if fileSize > 3*1024*1024*1024 {
-				zipCmd = fmt.Sprintf("pbzip2 -p15f %s.txt", fileName)
+				zipCmd = fmt.Sprintf("pbzip2 -5 -p20f %s.txt", fileName)
 			}
 
 			err := Cmd(zipCmd)
@@ -211,13 +213,19 @@ func (work *Work) ZipCombineFile() {
 				hadoopDir := fmt.Sprintf("%s/%s/%s/%s/", HdfsBaseDir, project, work.Date, work.Hour)
 				mkdirCmd := fmt.Sprintf("source ~/.bashrc ; %s dfs -mkdir -p %s.txt.bz2 %s", HADOOP_BIN, fileName, hadoopDir)
 				Cmd(mkdirCmd)
-				uploadCmd := fmt.Sprintf("source ~/.bashrc ; %s dfs -put -f %s.txt.bz2 %s", HADOOP_BIN, fileName, hadoopDir)
-				err = Cmd(uploadCmd)
-				if err != nil {
-					errorLog("upload error:" + uploadCmd + " error:" + err.Error())
-				} else {
-					RemoveFile(fileName + ".txt.bz2")
-					infoLog("upload end : " + project)
+
+				for i := 0; i <= 10; i++ {
+					uploadCmd := fmt.Sprintf("source ~/.bashrc ; %s dfs -put -f %s.txt.bz2 %s", HADOOP_BIN, fileName, hadoopDir)
+					err = Cmd(uploadCmd)
+					if err != nil {
+						errorLog("upload error:" + uploadCmd + " error:" + err.Error())
+						fmt.Sprintf("%d:upload error:%s;error:%s", i, uploadCmd, err.Error())
+						time.Sleep(2 * time.Second)
+					} else {
+						RemoveFile(fileName + ".txt.bz2")
+						infoLog("upload end : " + project)
+						break
+					}
 				}
 			} else {
 				errorLog("zip error:" + zipCmd + " error:" + err.Error())
@@ -251,10 +259,15 @@ func GetProjectList(baseDir string) []string {
 	projectList := []string{}
 	for _, dir := range dirList {
 		project := strings.TrimLeft(Substr(dir, strings.LastIndex(dir, "/"), len(dir)), "/")
-		if _, ok := majorProject[project]; ok {
-			projectList = append([]string{project}, projectList...)
+		_, ok := majorProject[project]
+		if isMajor == "yes" {
+			if ok {
+				projectList = append([]string{project}, projectList...)
+			}
 		} else {
-			projectList = append(projectList, project)
+			if !ok {
+				projectList = append(projectList, project)
+			}
 		}
 	}
 	return projectList
