@@ -213,19 +213,22 @@ func (work *Work) ZipCombineFile() {
 				hadoopDir := fmt.Sprintf("%s/%s/%s/%s/", HdfsBaseDir, project, work.Date, work.Hour)
 				mkdirCmd := fmt.Sprintf("source ~/.bashrc ; %s dfs -mkdir -p %s.txt.bz2 %s", HADOOP_BIN, fileName, hadoopDir)
 				Cmd(mkdirCmd)
-
+				uploadError := true
+				uploadCmd := fmt.Sprintf("source ~/.bashrc ; %s dfs -put -f %s.txt.bz2 %s", HADOOP_BIN, fileName, hadoopDir)
 				for i := 0; i <= 10; i++ {
-					uploadCmd := fmt.Sprintf("source ~/.bashrc ; %s dfs -put -f %s.txt.bz2 %s", HADOOP_BIN, fileName, hadoopDir)
 					err = Cmd(uploadCmd)
 					if err != nil {
-						errorLog("upload error:" + uploadCmd + " error:" + err.Error())
-						fmt.Sprintf("%d:upload error:%s;error:%s", i, uploadCmd, err.Error())
 						time.Sleep(2 * time.Second)
 					} else {
 						RemoveFile(fileName + ".txt.bz2")
 						infoLog("upload end : " + project)
+						uploadError = false
 						break
 					}
+				}
+
+				if uploadError {
+					errorLog(fmt.Sprintf("upload error:%s;error:%s", uploadCmd, err.Error()))
 				}
 			} else {
 				errorLog("zip error:" + zipCmd + " error:" + err.Error())
@@ -387,6 +390,7 @@ func infoLog(msg string) {
 func errorLog(msg string) {
 	log := fmt.Sprintf("(error %s)：%s", time.Now().Format("2006-01-02 15:04:05"), msg)
 	fmt.Println(log)
+	os.Exit(-1)
 }
 
 //获取运算日期
