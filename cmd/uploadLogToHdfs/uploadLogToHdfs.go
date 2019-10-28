@@ -143,7 +143,10 @@ func rsync(ip string) {
 				dstDir
 		}
 	}
-	Cmd(cmd)
+	out, err := Exec(cmd)
+	if err != nil {
+		errorLog("rsync error: cmd:" + cmd + " ;out:" + out + ";error:" + err.Error())
+	}
 	infoLog("rsync end :" + cmd)
 }
 
