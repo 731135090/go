@@ -79,6 +79,10 @@ func Init() {
 	rWait.Wait()
 
 	projectList = GetProjectList(work.SrcBaseDir)
+	if work.Project != "all" {
+		projectList = []string{work.Project}
+	}
+
 	projectCount := 0
 	for _, projectName := range projectList {
 		pattern := fmt.Sprintf("*,%s,%s,%s*.log", projectName, work.Date, work.Hour)
