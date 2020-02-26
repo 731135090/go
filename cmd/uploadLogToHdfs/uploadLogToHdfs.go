@@ -16,7 +16,24 @@ import (
 const HADOOP_BIN = "/usr/bin/hadoop"
 
 var HdfsBaseDir = "/ods/mobile/appNewlogs"
-var IpList = []string{"172.20.0.91", "172.20.0.93", "172.20.0.106", "172.20.0.52"}
+var IpList = []string{
+	"172.20.0.91",
+	"172.20.0.93",
+	"172.20.0.106",
+	"172.20.0.52",
+	"172.20.0.76",
+	"172.20.0.77",
+	"172.20.0.53",
+	"172.20.0.54",
+	"172.20.0.55",
+	"172.20.0.56",
+	"172.20.0.57",
+	"172.20.0.58",
+	"172.21.0.164",
+	"172.21.0.165",
+	"172.21.0.166",
+	"172.21.0.167",
+}
 
 var projectList []string
 
@@ -149,7 +166,7 @@ func rsync(ip string) {
 	}
 	out, err := Exec(cmd)
 	if err != nil {
-		errorLog("rsync error: cmd:" + cmd + " ;out:" + out + ";error:" + err.Error())
+		warLog("rsync war: cmd:" + cmd + " ;out:" + out + ";error:" + err.Error())
 	}
 	infoLog("rsync end :" + cmd)
 }
@@ -392,6 +409,10 @@ func GetAllFileByPattern(dir string, pattern string) []string {
 
 func infoLog(msg string) {
 	log := fmt.Sprintf("(info %s)：%s", time.Now().Format("2006-01-02 15:04:05"), msg)
+	fmt.Println(log)
+}
+func warLog(msg string) {
+	log := fmt.Sprintf("(war %s)：%s", time.Now().Format("2006-01-02 15:04:05"), msg)
 	fmt.Println(log)
 }
 func errorLog(msg string) {
